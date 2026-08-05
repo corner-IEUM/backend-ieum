@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>이음 WebSocket 테스트</title>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js"></script>
+</head>
+<body>
+<h2>장애물 감지 메시지</h2>
+<div id="status">연결 대기 중...</div>
+<ul id="log"></ul>
+
+<script>
+    const client = new StompJs.Client({
+        brokerURL: 'ws://localhost:8080/ws',
+    });
+
+    client.onConnect = () => {
+        document.getElementById('status').textContent = '연결됨';
+
+        client.subscribe('/topic/obstacle', (msg) => {
+            const data = JSON.parse(msg.body);
+            const li = document.createElement('li');
+            li.textContent = `${data.message} (근접도 ${data.proximity})`;
+            document.getElementById('log').prepend(li);
+        });
+    };
+
+    client.onStompError = (frame) => {
+        document.getElementById('status').textContent = '오류: ' + frame.headers['message'];
+    };
+
+    client.activate();
+</script>
+</body>
+</html>
