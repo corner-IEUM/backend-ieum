@@ -10,6 +10,8 @@ import com.ieum.ieum.repository.NavigationRepository;
 import tools.jackson.databind.ObjectMapper;   // ★ Jackson 3 경로 (아래 주의 참고)
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.ieum.ieum.dto.Crosswalk;
+import java.util.List;
 
 @Service
 public class NavigationService {
@@ -17,13 +19,16 @@ public class NavigationService {
     private final KakaoDirectionsClient kakaoClient;
     private final NavigationRepository navigationRepository;
     private final ObjectMapper objectMapper;
+    private final RouteParser routeParser;
 
     public NavigationService(KakaoDirectionsClient kakaoClient,
                              NavigationRepository navigationRepository,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             RouteParser routeParser) {
         this.kakaoClient = kakaoClient;
         this.navigationRepository = navigationRepository;
         this.objectMapper = objectMapper;
+        this.routeParser = routeParser;
     }
 
     @Transactional
@@ -51,7 +56,14 @@ public class NavigationService {
                 .build();
 
         navigationRepository.save(nav);
-        return new RouteResponse(nav.getId(), nav.getDistance(), nav.getDuration(), raw);
+        List<Crosswalk> crosswalks = routeParser.extractCrosswalks(raw);
+        return new RouteResponse(
+                nav.getId(),
+                nav.getDistance(),
+                nav.getDuration(),
+                crosswalks,
+                raw
+        );
     }
 
     @Transactional
