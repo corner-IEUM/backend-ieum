@@ -43,11 +43,24 @@
   }
   .controls .spacer { flex: 1; }
   .toggle { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
+  .controls input[type="text"] {
+    padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    font-size: 14px;
+  }
   button {
     padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer;
     background: var(--walker); color: #04211e; font-weight: 700; font-size: 14px;
   }
   button:disabled { opacity: 0.45; cursor: default; }
+  .candidates { padding: 12px 16px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .candidate {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; min-width: 200px;
+  }
+  .candidate .title { font-weight: 700; margin-bottom: 6px; }
+  .candidate .meta { color: var(--muted); font-size: 13px; margin-bottom: 10px; line-height: 1.5; }
+  .candidate .meta b { color: var(--text); }
   .grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
   @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -82,6 +95,26 @@
     <h1>이음 — 횡단보도·계단 안내 시뮬레이션</h1>
     <span class="sub">저장된 경로를 따라 걷는 상황을 재생하고, 횡단보도·계단(지하보도/육교 포함) 접근 시 안내를 내보냅니다</span>
   </header>
+
+  <div class="controls">
+    <label for="token">토큰</label>
+    <input type="text" id="token" placeholder="로그인으로 받은 accessToken (Bearer 제외)" style="width:320px">
+  </div>
+
+  <div class="controls">
+    <label for="startLng">출발</label>
+    <input type="number" id="startLng" step="0.000001" placeholder="lng" style="width:130px">
+    <input type="number" id="startLat" step="0.000001" placeholder="lat" style="width:130px">
+    <label for="endLng">도착</label>
+    <input type="number" id="endLng" step="0.000001" placeholder="lng" style="width:130px">
+    <input type="number" id="endLat" step="0.000001" placeholder="lat" style="width:130px">
+    <button id="searchBtn">경로 후보 조회</button>
+  </div>
+
+  <div class="card" id="candidatesCard" style="display:none; margin-bottom:16px;">
+    <h2>경로 후보 — 계단 개수를 보고 선택하세요</h2>
+    <div class="candidates" id="candidates"></div>
+  </div>
 
   <div class="controls">
     <label for="navId">길찾기 ID</label>
@@ -216,8 +249,8 @@
     speechSynthesis.cancel(); speechSynthesis.speak(u);
   }
 
-  startBtn.addEventListener("click", () => {
-    const navId = document.getElementById("navId").value;
+  function startSimulation(navId) {
+    document.getElementById("navId").value = navId;
     if (ws) ws.close();
     feed.innerHTML = ""; addFeed("sys", "연결", "서버에 연결하는 중…");
     path = []; crosswalks = []; cwState = []; stairs = []; stState = []; pos = null; bounds = null;
@@ -229,7 +262,73 @@
     ws.onopen = () => ws.send(JSON.stringify({ navigationId: Number(navId) }));
     ws.onerror = () => addFeed("sys", "오류", "연결에 실패했습니다. 서버가 켜져 있는지 확인하세요.");
     ws.onmessage = (ev) => handle(JSON.parse(ev.data));
+  }
+
+  startBtn.addEventListener("click", () => startSimulation(document.getElementById("navId").value));
+
+  function authHeaders() {
+    const token = document.getElementById("token").value.trim();
+    return token ? { "Authorization": `Bearer ${token}` } : {};
+  }
+
+  const searchBtn = document.getElementById("searchBtn");
+  const candidatesCard = document.getElementById("candidatesCard");
+  const candidatesEl = document.getElementById("candidates");
+
+  searchBtn.addEventListener("click", async () => {
+    const coords = {
+      startLng: Number(document.getElementById("startLng").value),
+      startLat: Number(document.getElementById("startLat").value),
+      endLng: Number(document.getElementById("endLng").value),
+      endLat: Number(document.getElementById("endLat").value),
+    };
+    candidatesCard.style.display = "block";
+    candidatesEl.innerHTML = `<span style="color:var(--muted)">조회 중…</span>`;
+    try {
+      const res = await fetch("/api/navigation/route/candidates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(coords),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      renderCandidates(await res.json(), coords);
+    } catch (e) {
+      candidatesEl.innerHTML = `<span style="color:var(--arrive)">조회 실패: ${e.message}</span>`;
+    }
   });
+
+  function renderCandidates(list, coords) {
+    candidatesEl.innerHTML = "";
+    list.forEach(c => {
+      const div = document.createElement("div");
+      div.className = "candidate";
+      div.innerHTML = `
+        <div class="title">${c.label}</div>
+        <div class="meta">
+          ${c.distance}m · 약 ${Math.round(c.duration / 60)}분<br>
+          계단 <b>${c.stairs.length}곳</b> · 횡단보도 <b>${c.crosswalks.length}곳</b>
+        </div>
+        <button>이 경로로 시작</button>
+      `;
+      div.querySelector("button").addEventListener("click", () => startFromCandidate(coords, c.searchOption));
+      candidatesEl.appendChild(div);
+    });
+  }
+
+  async function startFromCandidate(coords, searchOption) {
+    try {
+      const res = await fetch("/api/navigation/route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ ...coords, searchOption }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      startSimulation(data.navigationId);
+    } catch (e) {
+      candidatesEl.insertAdjacentHTML("beforeend", `<span style="color:var(--arrive)">경로 확정 실패: ${e.message}</span>`);
+    }
+  }
 
   function handle(msg) {
     switch (msg.type) {
