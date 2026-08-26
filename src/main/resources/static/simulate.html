@@ -70,6 +70,8 @@
   #feed li.arrive .tag { color: var(--arrive); }
   #feed li.done { border-left-color: var(--done); }
   #feed li.done .tag { color: var(--done); }
+  #feed li.turn { border-left-color: var(--path); }
+  #feed li.turn .tag { color: var(--muted); }
   #feed li.sys .tag { color: var(--muted); }
   .empty { color: var(--muted); font-size: 13px; padding: 18px 16px; }
 </style>
@@ -244,14 +246,17 @@
         statusEl.innerHTML = `이동 중 · <b>${msg.index + 1}/${msg.total}</b>`;
         break;
       case "guidance": {
-        const isStair = msg.kind === "stair";
-        const list = isStair ? stairs : crosswalks;
-        const i = list.findIndex(c => c.guidance === msg.guidance);
-        if (i >= 0) (isStair ? stState : cwState)[i] = msg.event;
-        draw();
-        const label = isStair ? "계단" : "횡단보도";
-        const tag = msg.event === "arrive" ? `${label} 도착` : `${label} 접근`;
-        addFeed(msg.event, `${tag} · ${msg.distance}m`, msg.message);
+        const kind = msg.kind; // "stair" | "crosswalk" | "turn"
+        const list = kind === "stair" ? stairs : kind === "crosswalk" ? crosswalks : null;
+        if (list) {
+          const i = list.findIndex(c => c.guidance === msg.guidance);
+          if (i >= 0) (kind === "stair" ? stState : cwState)[i] = msg.event;
+          draw();
+        }
+        const label = kind === "stair" ? "계단" : kind === "crosswalk" ? "횡단보도" : "안내";
+        const tag = msg.event === "arrive" ? `${label} 도착` : msg.event === "approach" ? `${label} 접근` : label;
+        const cls = msg.event === "guide" ? "turn" : msg.event;
+        addFeed(cls, `${tag} · ${msg.distance}m`, msg.message);
         speak(msg.message);
         break;
       }
