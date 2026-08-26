@@ -2,6 +2,7 @@ package com.ieum.ieum.websocket;
 
 import com.ieum.ieum.domain.Navigation;
 import com.ieum.ieum.dto.Crosswalk;
+import com.ieum.ieum.dto.Stair;
 import com.ieum.ieum.dto.GuidanceMessage;
 import com.ieum.ieum.repository.NavigationRepository;
 import com.ieum.ieum.service.GuidanceService;
@@ -22,6 +23,8 @@ public class CrosswalkSimulationHandler extends TextWebSocketHandler {
 
     private static final double APPROACH_M  = 30.0;  // 접근 안내 거리(m)
     private static final double ARRIVE_M     = 8.0;   // 도착 안내 거리(m)
+    private static final double STAIR_APPROACH_M = 40.0; // 계단 접근 안내 거리(m) — 위험도가 높아 더 여유있게
+    private static final double STAIR_ARRIVE_M   = 8.0;  // 계단 도착 안내 거리(m)
     // private static final long   INTERVAL_MS  = 250;   // 좌표 재생 간격(ms) — 데모 속도 조절
     private static final double WALK_SPEED_MPS = 1.4;  // 보행 속도(m/s) — 사람 평균
     private static final double TIME_SCALE = 0.8;     // 데모 배속 (10 = 실제보다 10배 빠름)
@@ -65,6 +68,7 @@ public class CrosswalkSimulationHandler extends TextWebSocketHandler {
         String raw = nav.getRouteData();
         List<double[]> path = routeParser.extractPath(raw);
         List<Crosswalk> crosswalks = routeParser.extractCrosswalks(raw);
+        List<Stair> stairs = routeParser.extractStairs(raw);
 
         if (path.isEmpty()) {
             send(session, Map.of("type", "error", "message", "경로 좌표를 찾을 수 없습니다."));
@@ -72,16 +76,18 @@ public class CrosswalkSimulationHandler extends TextWebSocketHandler {
         }
 
         // 재생은 별도 스레드에서 (핸들러는 즉시 반환)
-        new Thread(() -> replay(session, path, crosswalks)).start();
+        new Thread(() -> replay(session, path, crosswalks, stairs)).start();
     }
 
-    private void replay(WebSocketSession session, List<double[]> path, List<Crosswalk> crosswalks) {
+    private void replay(WebSocketSession session, List<double[]> path, List<Crosswalk> crosswalks, List<Stair> stairs) {
         try {
-            // 1) 전체 경로 + 횡단보도 위치를 먼저 전송 (지도 그리기용)
-            send(session, Map.of("type", "init", "path", path, "crosswalks", crosswalks));
+            // 1) 전체 경로 + 횡단보도/계단 위치를 먼저 전송 (지도 그리기용)
+            send(session, Map.of("type", "init", "path", path, "crosswalks", crosswalks, "stairs", stairs));
 
             boolean[] approached = new boolean[crosswalks.size()];
             boolean[] arrived = new boolean[crosswalks.size()];
+            boolean[] stairApproached = new boolean[stairs.size()];
+            boolean[] stairArrived = new boolean[stairs.size()];
             // boolean[] obstacleFired = new boolean[DEMO_OBSTACLES.size()];
 
             // 2) 좌표를 순서대로 재생 (GPS 흉내)
@@ -99,7 +105,7 @@ public class CrosswalkSimulationHandler extends TextWebSocketHandler {
 
                     if (!approached[c] && d <= APPROACH_M) {
                         approached[c] = true;
-                        send(session, Map.of("type", "guidance", "event", "approach",
+                        send(session, Map.of("type", "guidance", "kind", "crosswalk", "event", "approach",
                                 "guidance", cw.guidance(), "distance", Math.round(d),
                                 "message", "잠시 후 횡단보도입니다. " + cw.guidance()));
                         // ↓ 통합 허브에도 전송 (priority 3 = 일반 정보)
@@ -109,13 +115,38 @@ public class CrosswalkSimulationHandler extends TextWebSocketHandler {
                     }
                     if (!arrived[c] && d <= ARRIVE_M) {
                         arrived[c] = true;
-                        send(session, Map.of("type", "guidance", "event", "arrive",
+                        send(session, Map.of("type", "guidance", "kind", "crosswalk", "event", "arrive",
                                 "guidance", cw.guidance(), "distance", Math.round(d),
                                 "message", "횡단보도에 도착했습니다. 신호를 확인하세요."));
                         // ↓ 통합 허브에도 전송 (priority 2 = 결정적 순간)
                         guidanceService.send(new com.ieum.ieum.dto.GuidanceMessage(
                                 "crosswalk", 2, "횡단보도에 도착했습니다. 신호를 확인하세요.",
                                 java.util.Map.of("event", "arrive", "guidance", cw.guidance())));
+                    }
+                }
+
+                // 3-1) 각 계단(지하보도/육교 포함)과의 거리 확인 → 접근/도착 안내
+                for (int s = 0; s < stairs.size(); s++) {
+                    Stair st = stairs.get(s);
+                    double d = haversine(cur[1], cur[0], st.lat(), st.lng());
+
+                    if (!stairApproached[s] && d <= STAIR_APPROACH_M) {
+                        stairApproached[s] = true;
+                        send(session, Map.of("type", "guidance", "kind", "stair", "event", "approach",
+                                "guidance", st.guidance(), "distance", Math.round(d),
+                                "message", "잠시 후 계단입니다. " + st.guidance()));
+                        guidanceService.send(new com.ieum.ieum.dto.GuidanceMessage(
+                                "stair", 3, "잠시 후 계단입니다. " + st.guidance(),
+                                java.util.Map.of("event", "approach", "distance", Math.round(d))));
+                    }
+                    if (!stairArrived[s] && d <= STAIR_ARRIVE_M) {
+                        stairArrived[s] = true;
+                        send(session, Map.of("type", "guidance", "kind", "stair", "event", "arrive",
+                                "guidance", st.guidance(), "distance", Math.round(d),
+                                "message", "계단입니다. 손잡이와 발밑을 확인하세요."));
+                        guidanceService.send(new com.ieum.ieum.dto.GuidanceMessage(
+                                "stair", 2, "계단입니다. 손잡이와 발밑을 확인하세요.",
+                                java.util.Map.of("event", "arrive", "guidance", st.guidance())));
                     }
                 }
 

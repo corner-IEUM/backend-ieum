@@ -16,19 +16,6 @@ public class KakaoDirectionsClient {
                 .build();
     }
 
-    public String walk(double startLng, double startLat, double endLng, double endLat) {
-        return restClient.get()
-                .uri(uri -> uri.path("/v2/routing/walk")
-                        .queryParam("start_x", startLng)   // x = 경도(lng)!
-                        .queryParam("start_y", startLat)   // y = 위도(lat)!
-                        .queryParam("end_x", endLng)
-                        .queryParam("end_y", endLat)
-                        .queryParam("route_mode", "ACCESSIBLE")  // 시각장애인용 '편안한 길'
-                        .build())
-                .retrieve()
-                .body(String.class);
-    }
-
     public String searchKeyword(String query, Double lng, Double lat, int size) {
         return restClient.get()
                 .uri(uri -> {

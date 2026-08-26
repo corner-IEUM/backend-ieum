@@ -12,9 +12,10 @@
     --line:       #2b3d5f;
     --path:       #3e5a7a;   /* 경로선 */
     --walker:     #35d0c0;   /* 사용자 위치 */
-    --idle:       #5a6b86;   /* 대기 중 횡단보도 */
+    --idle:       #5a6b86;   /* 대기 중 횡단보도/계단 */
     --approach:   #f2b33d;   /* 접근(주의) */
     --arrive:     #f2603d;   /* 도착(신호 확인) */
+    --stair-idle: #7a6b9e;   /* 대기 중 계단 */
     --done:       #4fcb6b;
     --text:       #e6edf6;
     --muted:      #8a9bb4;
@@ -76,8 +77,8 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>이음 — 횡단보도 안내 시뮬레이션</h1>
-    <span class="sub">저장된 경로를 따라 걷는 상황을 재생하고, 횡단보도 접근 시 안내를 내보냅니다</span>
+    <h1>이음 — 횡단보도·계단 안내 시뮬레이션</h1>
+    <span class="sub">저장된 경로를 따라 걷는 상황을 재생하고, 횡단보도·계단(지하보도/육교 포함) 접근 시 안내를 내보냅니다</span>
   </header>
 
   <div class="controls">
@@ -108,7 +109,7 @@
   const statusEl = document.getElementById("status");
   const startBtn = document.getElementById("startBtn");
 
-  let path = [], crosswalks = [], cwState = [], pos = null, bounds = null, ws = null;
+  let path = [], crosswalks = [], cwState = [], stairs = [], stState = [], pos = null, bounds = null, ws = null;
 
   // 화면 크기에 맞춰 캔버스 해상도 세팅
   function sizeCanvas() {
@@ -165,6 +166,21 @@
       ctx.strokeStyle = "#0b1220"; ctx.lineWidth = 2; ctx.stroke();
     });
 
+    // 계단 마커 (지하보도/육교 포함) — 원이 아닌 사각형으로 구분
+    stairs.forEach((st, i) => {
+      const [x, y] = project(st.lng, st.lat);
+      const state = stState[i] || "idle";
+      const color = state === "arrive" ? getVar("--arrive")
+                  : state === "approach" ? getVar("--approach") : getVar("--stair-idle");
+      if (state !== "idle") {
+        ctx.beginPath(); ctx.arc(x, y, 15, 0, Math.PI * 2);
+        ctx.fillStyle = hexA(color, 0.22); ctx.fill();
+      }
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 6, y - 6, 12, 12);
+      ctx.strokeStyle = "#0b1220"; ctx.lineWidth = 2; ctx.strokeRect(x - 6, y - 6, 12, 12);
+    });
+
     // 사용자 위치
     if (pos) {
       const [x, y] = project(pos[0], pos[1]);
@@ -202,7 +218,7 @@
     const navId = document.getElementById("navId").value;
     if (ws) ws.close();
     feed.innerHTML = ""; addFeed("sys", "연결", "서버에 연결하는 중…");
-    path = []; crosswalks = []; cwState = []; pos = null; bounds = null;
+    path = []; crosswalks = []; cwState = []; stairs = []; stState = []; pos = null; bounds = null;
 
     const proto = location.protocol === "https:" ? "wss://" : "ws://";
     const host = location.host || "localhost:8080";  // 파일로 직접 열어도 동작
@@ -216,21 +232,25 @@
   function handle(msg) {
     switch (msg.type) {
       case "init":
-        path = msg.path; crosswalks = msg.crosswalks;
+        path = msg.path; crosswalks = msg.crosswalks; stairs = msg.stairs || [];
         cwState = crosswalks.map(() => "idle");
+        stState = stairs.map(() => "idle");
         sizeCanvas(); computeBounds(); draw();
-        addFeed("sys", "경로 로드", `좌표 ${path.length}개, 횡단보도 ${crosswalks.length}곳`);
-        statusEl.innerHTML = `횡단보도 <b>${crosswalks.length}곳</b> · 경로 좌표 <b>${path.length}개</b>`;
+        addFeed("sys", "경로 로드", `좌표 ${path.length}개, 횡단보도 ${crosswalks.length}곳, 계단 ${stairs.length}곳`);
+        statusEl.innerHTML = `횡단보도 <b>${crosswalks.length}곳</b> · 계단 <b>${stairs.length}곳</b> · 경로 좌표 <b>${path.length}개</b>`;
         break;
       case "position":
         pos = [msg.lng, msg.lat]; draw();
         statusEl.innerHTML = `이동 중 · <b>${msg.index + 1}/${msg.total}</b>`;
         break;
       case "guidance": {
-        const i = crosswalks.findIndex(c => c.guidance === msg.guidance);
-        if (i >= 0) cwState[i] = msg.event;
+        const isStair = msg.kind === "stair";
+        const list = isStair ? stairs : crosswalks;
+        const i = list.findIndex(c => c.guidance === msg.guidance);
+        if (i >= 0) (isStair ? stState : cwState)[i] = msg.event;
         draw();
-        const tag = msg.event === "arrive" ? "횡단보도 도착" : "횡단보도 접근";
+        const label = isStair ? "계단" : "횡단보도";
+        const tag = msg.event === "arrive" ? `${label} 도착` : `${label} 접근`;
         addFeed(msg.event, `${tag} · ${msg.distance}m`, msg.message);
         speak(msg.message);
         break;
