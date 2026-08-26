@@ -19,7 +19,7 @@ public class TmapDirectionsClient {
                 .build();
     }
 
-    public String walk(double startLng, double startLat, double endLng, double endLat) {
+    public String walk(double startLng, double startLat, double endLng, double endLat, int searchOption) {
         return restClient.post()
                 .uri(uri -> uri.path("/tmap/routes/pedestrian")
                         .queryParam("version", 1)
@@ -33,7 +33,8 @@ public class TmapDirectionsClient {
                         "startName", "출발지",
                         "endName", "도착지",
                         "reqCoordType", "WGS84GEO",
-                        "resCoordType", "WGS84GEO"))
+                        "resCoordType", "WGS84GEO",
+                        "searchOption", String.valueOf(searchOption)))
                 .retrieve()
                 .body(String.class);
     }

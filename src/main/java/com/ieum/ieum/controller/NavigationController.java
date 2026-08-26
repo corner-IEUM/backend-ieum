@@ -1,6 +1,7 @@
 package com.ieum.ieum.controller;
 
 import com.ieum.ieum.dto.NavigationCompleteRequest;
+import com.ieum.ieum.dto.RouteCandidate;
 import com.ieum.ieum.dto.RouteRequest;
 import com.ieum.ieum.dto.RouteResponse;
 import com.ieum.ieum.service.NavigationService;
@@ -8,6 +9,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/navigation")
@@ -17,6 +20,13 @@ public class NavigationController {
 
     public NavigationController(NavigationService navigationService) {
         this.navigationService = navigationService;
+    }
+
+    @PostMapping("/route/candidates")
+    public ResponseEntity<List<RouteCandidate>> searchRouteCandidates(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody RouteRequest request) {
+        return ResponseEntity.ok(navigationService.searchRouteCandidates(request));
     }
 
     @PostMapping("/route")

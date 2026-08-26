@@ -3,6 +3,7 @@ package com.ieum.ieum.service;
 import com.ieum.ieum.client.TmapDirectionsClient;
 import com.ieum.ieum.domain.Navigation;
 import com.ieum.ieum.dto.NavigationCompleteRequest;
+import com.ieum.ieum.dto.RouteCandidate;
 import com.ieum.ieum.dto.RouteRequest;
 import com.ieum.ieum.dto.RouteResponse;
 import com.ieum.ieum.repository.NavigationRepository;
@@ -16,6 +17,9 @@ import java.util.List;
 
 @Service
 public class NavigationService {
+
+    private static final int RECOMMENDED_OPTION = 0;
+    private static final int NO_STAIRS_OPTION = 30;
 
     private final TmapDirectionsClient tmapClient;
     private final NavigationRepository navigationRepository;
@@ -32,20 +36,33 @@ public class NavigationService {
         this.routeParser = routeParser;
     }
 
+    /**
+     * 출발/도착 좌표에 대해 "추천 경로"와 "계단 없는 경로" 두 후보를 미리 보여준다.
+     * DB에 저장하지 않으며, 사용자가 이 중 하나를 고르면 그 searchOption으로 createRoute를 호출해 확정한다.
+     */
+    public List<RouteCandidate> searchRouteCandidates(RouteRequest req) {
+        RouteCandidate recommended = buildCandidate(req, RECOMMENDED_OPTION, "추천 경로");
+        RouteCandidate noStairs = buildCandidate(req, NO_STAIRS_OPTION, "계단 없는 경로");
+        return List.of(recommended, noStairs);
+    }
+
+    private RouteCandidate buildCandidate(RouteRequest req, int searchOption, String label) {
+        String raw = fetchRoute(req, searchOption);
+        RouteParser.RouteTotals totals = routeParser.extractTotals(raw);
+        return new RouteCandidate(
+                searchOption,
+                label,
+                totals.distance(),
+                totals.duration(),
+                routeParser.extractCrosswalks(raw),
+                routeParser.extractStairs(raw)
+        );
+    }
+
     @Transactional
     public RouteResponse createRoute(Long userId, RouteRequest req) {
-        String raw = tmapClient.walk(req.startLng(), req.startLat(), req.endLng(), req.endLat());
-
-        JsonNode root;
-        try {
-            root = objectMapper.readTree(raw);
-        } catch (Exception e) {
-            throw new IllegalStateException("티맵 경로 응답을 해석하지 못했습니다.", e);
-        }
-        if (root.has("error")) {
-            throw new IllegalArgumentException("경로를 찾을 수 없습니다. (" + root.path("error").path("message").asString() + ")");
-        }
-
+        int searchOption = req.searchOption() != null ? req.searchOption() : RECOMMENDED_OPTION;
+        String raw = fetchRoute(req, searchOption);
         RouteParser.RouteTotals totals = routeParser.extractTotals(raw);
 
         Navigation nav = Navigation.builder()
@@ -68,6 +85,21 @@ public class NavigationService {
                 stairs,
                 raw
         );
+    }
+
+    private String fetchRoute(RouteRequest req, int searchOption) {
+        String raw = tmapClient.walk(req.startLng(), req.startLat(), req.endLng(), req.endLat(), searchOption);
+
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(raw);
+        } catch (Exception e) {
+            throw new IllegalStateException("티맵 경로 응답을 해석하지 못했습니다.", e);
+        }
+        if (root.has("error")) {
+            throw new IllegalArgumentException("경로를 찾을 수 없습니다. (" + root.path("error").path("message").asString() + ")");
+        }
+        return raw;
     }
 
     @Transactional
