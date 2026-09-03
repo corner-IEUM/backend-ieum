@@ -12,20 +12,24 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     private final JwtTokenProvider tokenProvider;
+    private final CorsConfigurationSource corsConfigurationSource;
 
-    public SecurityConfig(JwtTokenProvider tokenProvider) {
+    public SecurityConfig(JwtTokenProvider tokenProvider, CorsConfigurationSource corsConfigurationSource) {
         this.tokenProvider = tokenProvider;
+        this.corsConfigurationSource = corsConfigurationSource;
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
+                .cors(c -> c.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)   // JWT 무상태라 CSRF 끔
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
