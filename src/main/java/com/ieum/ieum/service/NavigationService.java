@@ -12,6 +12,7 @@ import tools.jackson.databind.ObjectMapper;   // ★ Jackson 3 경로 (아래 �
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ieum.ieum.dto.Crosswalk;
+import com.ieum.ieum.dto.CrosswalkAccessibilitySummary;
 import com.ieum.ieum.dto.Stair;
 import java.util.List;
 
@@ -25,15 +26,18 @@ public class NavigationService {
     private final NavigationRepository navigationRepository;
     private final ObjectMapper objectMapper;
     private final RouteParser routeParser;
+    private final CrosswalkAccessibilityService crosswalkAccessibilityService;
 
     public NavigationService(TmapDirectionsClient tmapClient,
                              NavigationRepository navigationRepository,
                              ObjectMapper objectMapper,
-                             RouteParser routeParser) {
+                             RouteParser routeParser,
+                             CrosswalkAccessibilityService crosswalkAccessibilityService) {
         this.tmapClient = tmapClient;
         this.navigationRepository = navigationRepository;
         this.objectMapper = objectMapper;
         this.routeParser = routeParser;
+        this.crosswalkAccessibilityService = crosswalkAccessibilityService;
     }
 
     /**
@@ -49,13 +53,15 @@ public class NavigationService {
     private RouteCandidate buildCandidate(RouteRequest req, int searchOption, String label) {
         String raw = fetchRoute(req, searchOption);
         RouteParser.RouteTotals totals = routeParser.extractTotals(raw);
+        List<Crosswalk> crosswalks = routeParser.extractCrosswalks(raw);
         return new RouteCandidate(
                 searchOption,
                 label,
                 totals.distance(),
                 totals.duration(),
-                routeParser.extractCrosswalks(raw),
-                routeParser.extractStairs(raw)
+                crosswalks,
+                routeParser.extractStairs(raw),
+                crosswalkAccessibilityService.summarizeForRoute(crosswalks)
         );
     }
 
@@ -77,12 +83,14 @@ public class NavigationService {
         navigationRepository.save(nav);
         List<Crosswalk> crosswalks = routeParser.extractCrosswalks(raw);
         List<Stair> stairs = routeParser.extractStairs(raw);
+        CrosswalkAccessibilitySummary accessibilitySummary = crosswalkAccessibilityService.summarizeForRoute(crosswalks);
         return new RouteResponse(
                 nav.getId(),
                 nav.getDistance(),
                 nav.getDuration(),
                 crosswalks,
                 stairs,
+                accessibilitySummary,
                 raw
         );
     }

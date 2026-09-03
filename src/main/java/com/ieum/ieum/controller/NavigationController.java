@@ -1,9 +1,11 @@
 package com.ieum.ieum.controller;
 
 import com.ieum.ieum.dto.NavigationCompleteRequest;
+import com.ieum.ieum.dto.NearbyHazardRequest;
 import com.ieum.ieum.dto.RouteCandidate;
 import com.ieum.ieum.dto.RouteRequest;
 import com.ieum.ieum.dto.RouteResponse;
+import com.ieum.ieum.service.HazardAlertService;
 import com.ieum.ieum.service.NavigationService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -17,9 +19,11 @@ import java.util.List;
 public class NavigationController {
 
     private final NavigationService navigationService;
+    private final HazardAlertService hazardAlertService;
 
-    public NavigationController(NavigationService navigationService) {
+    public NavigationController(NavigationService navigationService, HazardAlertService hazardAlertService) {
         this.navigationService = navigationService;
+        this.hazardAlertService = hazardAlertService;
     }
 
     @PostMapping("/route/candidates")
@@ -34,6 +38,14 @@ public class NavigationController {
             @AuthenticationPrincipal Long userId,
             @Valid @RequestBody RouteRequest request) {
         return ResponseEntity.ok(navigationService.createRoute(userId, request));
+    }
+
+    @PostMapping("/nearby-hazards")
+    public ResponseEntity<Void> checkNearbyHazards(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody NearbyHazardRequest request) {
+        hazardAlertService.checkAndNotify(request.lng(), request.lat());
+        return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/complete")

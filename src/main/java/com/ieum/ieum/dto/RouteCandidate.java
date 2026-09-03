@@ -8,5 +8,6 @@ public record RouteCandidate(
         int distance,       // m
         int duration,       // s
         List<Crosswalk> crosswalks,
-        List<Stair> stairs
+        List<Stair> stairs,
+        CrosswalkAccessibilitySummary accessibilitySummary
 ) {}

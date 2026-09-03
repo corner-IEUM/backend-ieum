@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>이음 — 횡단보도 안내 시뮬레이션</title>
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js"></script>
 <style>
   :root {
     --ink:        #0e1726;   /* 배경 */
@@ -86,6 +87,12 @@
   #feed li.turn { border-left-color: var(--path); }
   #feed li.turn .tag { color: var(--muted); }
   #feed li.sys .tag { color: var(--muted); }
+  #feed li.hazard-p1 { border-left-color: var(--arrive); }
+  #feed li.hazard-p1 .tag { color: var(--arrive); }
+  #feed li.hazard-p2 { border-left-color: var(--approach); }
+  #feed li.hazard-p2 .tag { color: var(--approach); }
+  #feed li.hazard-p3 { border-left-color: var(--muted); }
+  #feed li.hazard-p3 .tag { color: var(--muted); }
   .empty { color: var(--muted); font-size: 13px; padding: 18px 16px; }
 </style>
 </head>
@@ -109,6 +116,13 @@
     <input type="number" id="endLng" step="0.000001" placeholder="lng" style="width:130px">
     <input type="number" id="endLat" step="0.000001" placeholder="lat" style="width:130px">
     <button id="searchBtn">경로 후보 조회</button>
+  </div>
+
+  <div class="controls">
+    <label for="hazardLng">현재 위치(기능 B)</label>
+    <input type="number" id="hazardLng" step="0.000001" placeholder="lng" style="width:130px">
+    <input type="number" id="hazardLat" step="0.000001" placeholder="lat" style="width:130px">
+    <button id="hazardBtn">근처 위험 확인</button>
   </div>
 
   <div class="card" id="candidatesCard" style="display:none; margin-bottom:16px;">
@@ -300,13 +314,16 @@
   function renderCandidates(list, coords) {
     candidatesEl.innerHTML = "";
     list.forEach(c => {
+      const a = c.accessibilitySummary || {};
       const div = document.createElement("div");
       div.className = "candidate";
       div.innerHTML = `
         <div class="title">${c.label}</div>
         <div class="meta">
           ${c.distance}m · 약 ${Math.round(c.duration / 60)}분<br>
-          계단 <b>${c.stairs.length}곳</b> · 횡단보도 <b>${c.crosswalks.length}곳</b>
+          계단 <b>${c.stairs.length}곳</b> · 횡단보도 <b>${c.crosswalks.length}곳</b><br>
+          턱 안낮춤 <b>${a.noCurbCutCount ?? 0}곳</b> · 점자블록 없음 <b>${a.noBrailleBlockCount ?? 0}곳</b><br>
+          음향신호 없음 <b>${a.noSoundSignalCount ?? 0}곳</b> · 보행신호 없음 <b>${a.noPedestrianSignalCount ?? 0}곳</b>
         </div>
         <button>이 경로로 시작</button>
       `;
@@ -368,6 +385,37 @@
         break;
     }
   }
+
+  // 기능 B: /topic/guidance는 시뮬레이션 안내(stair/crosswalk/turn)도 함께 흘려보내므로
+  // 여기서는 crosswalk_accessibility(실시간 위치 기반 알림)만 걸러서 피드에 얹는다.
+  const guidanceStomp = new StompJs.Client({
+    brokerURL: (location.protocol === "https:" ? "wss://" : "ws://") + (location.host || "localhost:8080") + "/ws",
+  });
+  guidanceStomp.onConnect = () => {
+    guidanceStomp.subscribe("/topic/guidance", (frame) => {
+      const d = JSON.parse(frame.body);
+      if (d.kind !== "crosswalk_accessibility") return;
+      addFeed(`hazard-p${d.priority}`, `근처 위험 · p${d.priority}`, d.message);
+      speak(d.message);
+    });
+  };
+  guidanceStomp.activate();
+
+  document.getElementById("hazardBtn").addEventListener("click", async () => {
+    const lng = Number(document.getElementById("hazardLng").value);
+    const lat = Number(document.getElementById("hazardLat").value);
+    try {
+      const res = await fetch("/api/navigation/nearby-hazards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ lng, lat }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      addFeed("sys", "위험 확인 요청", "전송 완료 — 문제 있으면 위에 안내가 뜹니다.");
+    } catch (e) {
+      addFeed("sys", "오류", `위험 확인 요청 실패: ${e.message}`);
+    }
+  });
 
   sizeCanvas();
 </script>
