@@ -2,26 +2,43 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>이음 WebSocket 테스트</title>
+    <title>이음 통합 안내 테스트</title>
     <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+        #status { color: #666; font-size: 14px; margin-bottom: 12px; }
+        ul { list-style: none; padding: 0; }
+        li { padding: 10px 12px; margin: 6px 0; border-radius: 8px; border-left: 4px solid #ccc; background: #f5f5f5; }
+        li .tag { font-size: 12px; font-weight: 700; margin-right: 6px; }
+        li.p1 { border-left-color: #e5484d; }         /* 즉각 위험 */
+        li.p1 .tag { color: #e5484d; }
+        li.p2 { border-left-color: #f2803d; }         /* 결정적 순간 */
+        li.p2 .tag { color: #f2803d; }
+        li.p3 { border-left-color: #8a9bb4; }         /* 일반 정보 */
+        li.p3 .tag { color: #8a9bb4; }
+    </style>
 </head>
 <body>
-<h2>장애물 감지 메시지</h2>
+<h2>이음 — 통합 안내 스트림</h2>
 <div id="status">연결 대기 중...</div>
 <ul id="log"></ul>
 
 <script>
+    const PRIORITY_LABEL = { 1: "즉각위험", 2: "결정적", 3: "일반" };
+
     const client = new StompJs.Client({
         brokerURL: 'ws://localhost:8080/ws',
     });
 
     client.onConnect = () => {
-        document.getElementById('status').textContent = '연결됨';
+        document.getElementById('status').textContent = '연결됨 — /topic/guidance 구독 중';
 
-        client.subscribe('/topic/obstacle', (msg) => {
-            const data = JSON.parse(msg.body);
+        client.subscribe('/topic/guidance', (msg) => {
+            const d = JSON.parse(msg.body);
             const li = document.createElement('li');
-            li.textContent = `${data.message} (근접도 ${data.proximity})`;
+            li.className = 'p' + d.priority;
+            const label = PRIORITY_LABEL[d.priority] || d.priority;
+            li.innerHTML = `<span class="tag">[${label}·${d.kind}]</span>${d.message}`;
             document.getElementById('log').prepend(li);
         });
     };

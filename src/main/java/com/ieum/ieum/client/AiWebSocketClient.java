@@ -1,7 +1,7 @@
 package com.ieum.ieum.client;
 
-import com.ieum.ieum.dto.ObstacleMessage;
-import com.ieum.ieum.service.BroadcastService;
+import com.ieum.ieum.dto.GuidanceMessage;
+import com.ieum.ieum.service.GuidanceService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.util.Map;
 import java.util.concurrent.CompletionStage;
 
 @Slf4j
@@ -20,7 +21,7 @@ import java.util.concurrent.CompletionStage;
 @RequiredArgsConstructor
 public class AiWebSocketClient {
 
-    private final BroadcastService broadcastService;
+    private final GuidanceService guidanceService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${ai.server.url:ws://localhost:8000/ws/detect}")
@@ -75,17 +76,16 @@ public class AiWebSocketClient {
         try {
             JsonNode node = objectMapper.readTree(json);
 
-            ObstacleMessage message = new ObstacleMessage(
-                    node.path("type").asString(),
-                    node.path("track_id").asInt(),
-                    node.path("class").asString(),
-                    node.path("direction").asString(),
-                    node.path("proximity").asDouble(),
-                    node.path("message").asString(),
-                    node.path("timestamp").asDouble()
-            );
+            String kind = node.path("kind").asString();
+            int priority = node.path("priority").asInt(3);   // 없으면 일반(3)
+            String message = node.path("message").asString();
 
-            broadcastService.broadcastObstacle(message);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> meta = node.has("meta")
+                    ? objectMapper.convertValue(node.path("meta"), Map.class)
+                    : Map.of();
+
+            guidanceService.send(new GuidanceMessage(kind, priority, message, meta));
 
         } catch (Exception e) {
             log.error("[파싱 오류] {}", e.getMessage());
