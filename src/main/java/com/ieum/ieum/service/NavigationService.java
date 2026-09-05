@@ -3,6 +3,7 @@ package com.ieum.ieum.service;
 import com.ieum.ieum.client.TmapDirectionsClient;
 import com.ieum.ieum.domain.Navigation;
 import com.ieum.ieum.dto.NavigationCompleteRequest;
+import com.ieum.ieum.dto.NavigationHistoryResponse;
 import com.ieum.ieum.dto.RouteCandidate;
 import com.ieum.ieum.dto.RouteRequest;
 import com.ieum.ieum.dto.RouteResponse;
@@ -108,6 +109,13 @@ public class NavigationService {
             throw new IllegalArgumentException("경로를 찾을 수 없습니다. (" + root.path("error").path("message").asString() + ")");
         }
         return raw;
+    }
+
+    // "내 경로" 탭에서 유저별 길찾기 기록을 최신순으로 조회 (Repository 메서드는 기존에 이미 준비돼 있었음)
+    public List<NavigationHistoryResponse> getHistory(Long userId) {
+        return navigationRepository.findByUserIdOrderByStartTimeDesc(userId).stream()
+                .map(NavigationHistoryResponse::fromEntity)
+                .toList();
     }
 
     @Transactional

@@ -1,6 +1,7 @@
 package com.ieum.ieum.controller;
 
 import com.ieum.ieum.dto.NavigationCompleteRequest;
+import com.ieum.ieum.dto.NavigationHistoryResponse;
 import com.ieum.ieum.dto.NearbyHazardRequest;
 import com.ieum.ieum.dto.RouteCandidate;
 import com.ieum.ieum.dto.RouteRequest;
@@ -24,6 +25,14 @@ public class NavigationController {
     public NavigationController(NavigationService navigationService, HazardAlertService hazardAlertService) {
         this.navigationService = navigationService;
         this.hazardAlertService = hazardAlertService;
+    }
+
+    // "내 경로" 탭에서 프론트가 호출하는 API — 인증된 사용자의 길찾기 기록을 최신순으로 반환
+    // GET /api/navigation/history
+    @GetMapping("/history")
+    public ResponseEntity<List<NavigationHistoryResponse>> getHistory(
+            @AuthenticationPrincipal Long userId) {
+        return ResponseEntity.ok(navigationService.getHistory(userId));
     }
 
     @PostMapping("/route/candidates")
