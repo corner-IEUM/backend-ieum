@@ -1,15 +1,19 @@
 package com.ieum.ieum.service;
 
 import com.ieum.ieum.client.TmapDirectionsClient;
+import com.ieum.ieum.client.TmapTransitClient;
 import com.ieum.ieum.domain.Navigation;
 import com.ieum.ieum.dto.NavigationCompleteRequest;
 import com.ieum.ieum.dto.NavigationHistoryResponse;
 import com.ieum.ieum.dto.RouteCandidate;
 import com.ieum.ieum.dto.RouteRequest;
 import com.ieum.ieum.dto.RouteResponse;
+import com.ieum.ieum.dto.TransitCandidatesResponse;
+import com.ieum.ieum.dto.TransitItinerary;
 import com.ieum.ieum.repository.NavigationRepository;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;   // ★ Jackson 3 경로 (아래 주의 참고)
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ieum.ieum.dto.Crosswalk;
@@ -17,6 +21,7 @@ import com.ieum.ieum.dto.CrosswalkAccessibilitySummary;
 import com.ieum.ieum.dto.Stair;
 import java.util.List;
 
+@Slf4j
 @Service
 public class NavigationService {
 
@@ -24,20 +29,26 @@ public class NavigationService {
     private static final int NO_STAIRS_OPTION = 30;
 
     private final TmapDirectionsClient tmapClient;
+    private final TmapTransitClient tmapTransitClient;
     private final NavigationRepository navigationRepository;
     private final ObjectMapper objectMapper;
     private final RouteParser routeParser;
+    private final TransitRouteParser transitRouteParser;
     private final CrosswalkAccessibilityService crosswalkAccessibilityService;
 
     public NavigationService(TmapDirectionsClient tmapClient,
+                             TmapTransitClient tmapTransitClient,
                              NavigationRepository navigationRepository,
                              ObjectMapper objectMapper,
                              RouteParser routeParser,
+                             TransitRouteParser transitRouteParser,
                              CrosswalkAccessibilityService crosswalkAccessibilityService) {
         this.tmapClient = tmapClient;
+        this.tmapTransitClient = tmapTransitClient;
         this.navigationRepository = navigationRepository;
         this.objectMapper = objectMapper;
         this.routeParser = routeParser;
+        this.transitRouteParser = transitRouteParser;
         this.crosswalkAccessibilityService = crosswalkAccessibilityService;
     }
 
@@ -49,6 +60,24 @@ public class NavigationService {
         RouteCandidate recommended = buildCandidate(req, RECOMMENDED_OPTION, "추천 경로");
         RouteCandidate noStairs = buildCandidate(req, NO_STAIRS_OPTION, "계단 없는 경로");
         return List.of(recommended, noStairs);
+    }
+
+    /**
+     * 대중교통 경로 후보 + 비교용 도보 전용 후보를 함께 조회한다.
+     * 대중교통 API 호출/파싱이 실패해도(서비스 장애, 상품 미신청 등) 도보 비교는 보여줄 수 있어야
+     * 하므로 예외를 격리해서 빈 리스트로 내려준다 (HazardAlertService와 동일한 방식).
+     */
+    public TransitCandidatesResponse searchTransitCandidates(RouteRequest req) {
+        List<TransitItinerary> transitOptions;
+        try {
+            String raw = tmapTransitClient.search(req.startLng(), req.startLat(), req.endLng(), req.endLat());
+            transitOptions = transitRouteParser.parseItineraries(raw);
+        } catch (Exception e) {
+            log.warn("[대중교통 경로 조회 실패] {}", e.getMessage());
+            transitOptions = List.of();
+        }
+        RouteCandidate walkOption = buildCandidate(req, RECOMMENDED_OPTION, "도보 전용");
+        return new TransitCandidatesResponse(transitOptions, walkOption);
     }
 
     private RouteCandidate buildCandidate(RouteRequest req, int searchOption, String label) {

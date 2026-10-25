@@ -6,6 +6,7 @@ import com.ieum.ieum.dto.NearbyHazardRequest;
 import com.ieum.ieum.dto.RouteCandidate;
 import com.ieum.ieum.dto.RouteRequest;
 import com.ieum.ieum.dto.RouteResponse;
+import com.ieum.ieum.dto.TransitCandidatesResponse;
 import com.ieum.ieum.service.HazardAlertService;
 import com.ieum.ieum.service.NavigationService;
 import jakarta.validation.Valid;
@@ -47,6 +48,19 @@ public class NavigationController {
             @AuthenticationPrincipal Long userId,
             @Valid @RequestBody RouteRequest request) {
         return ResponseEntity.ok(navigationService.createRoute(userId, request));
+    }
+
+    // 대중교통 경로 후보 조회 — DB에 저장하지 않으며, 대중교통 후보(transitOptions, 없으면 빈 배열)와
+    // 비교용 도보 전용 후보(walkOption)를 항상 함께 내려준다.
+    @GetMapping("/transit/candidates")
+    public ResponseEntity<TransitCandidatesResponse> searchTransitCandidates(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam Double startLng,
+            @RequestParam Double startLat,
+            @RequestParam Double endLng,
+            @RequestParam Double endLat) {
+        RouteRequest req = new RouteRequest(startLng, startLat, endLng, endLat, null);
+        return ResponseEntity.ok(navigationService.searchTransitCandidates(req));
     }
 
     @PostMapping("/nearby-hazards")
