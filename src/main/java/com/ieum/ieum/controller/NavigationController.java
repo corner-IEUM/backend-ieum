@@ -7,12 +7,15 @@ import com.ieum.ieum.dto.RouteCandidate;
 import com.ieum.ieum.dto.RouteRequest;
 import com.ieum.ieum.dto.RouteResponse;
 import com.ieum.ieum.dto.TransitCandidatesResponse;
+import com.ieum.ieum.dto.TransitRouteSaveRequest;
 import com.ieum.ieum.service.HazardAlertService;
 import com.ieum.ieum.service.NavigationService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import com.ieum.ieum.dto.TransitRouteSaveResponse;
+import com.ieum.ieum.dto.LegStateUpdateRequest;
 
 import java.util.List;
 
@@ -77,6 +80,22 @@ public class NavigationController {
             @PathVariable Long id,
             @Valid @RequestBody NavigationCompleteRequest request) {
         navigationService.complete(userId, id, request);
+        return ResponseEntity.noContent().build();
+    }
+    // 후보 중 사용자가 고른 대중교통 경로를 Navigation으로 확정 저장
+    @PostMapping("/transit/route")
+    public ResponseEntity<TransitRouteSaveResponse> saveTransitRoute(
+            @AuthenticationPrincipal Long userId,
+            @RequestBody TransitRouteSaveRequest request) {
+        return ResponseEntity.ok(navigationService.saveTransitRoute(userId, request));
+    }
+        // 구간 상태 전환 (탑승/하차 확인 등)
+    @PatchMapping("/{id}/leg-state")
+    public ResponseEntity<Void> updateLegState(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long id,
+            @Valid @RequestBody LegStateUpdateRequest request) {
+        navigationService.updateLegState(userId, id, request);
         return ResponseEntity.noContent().build();
     }
 }

@@ -3,6 +3,7 @@ package com.ieum.ieum.service;
 import com.ieum.ieum.client.TmapDirectionsClient;
 import com.ieum.ieum.client.TmapTransitClient;
 import com.ieum.ieum.domain.Navigation;
+import com.ieum.ieum.domain.RouteType;
 import com.ieum.ieum.dto.NavigationCompleteRequest;
 import com.ieum.ieum.dto.NavigationHistoryResponse;
 import com.ieum.ieum.dto.RouteCandidate;
@@ -18,8 +19,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.ieum.ieum.dto.Crosswalk;
 import com.ieum.ieum.dto.CrosswalkAccessibilitySummary;
+import com.ieum.ieum.dto.LegStateUpdateRequest;
 import com.ieum.ieum.dto.Stair;
 import java.util.List;
+import com.ieum.ieum.dto.TransitRouteSaveRequest;
+import com.ieum.ieum.dto.TransitRouteSaveResponse;
+import com.ieum.ieum.dto.LegStateUpdateRequest;
+import com.ieum.ieum.domain.RouteType;
 
 @Slf4j
 @Service
@@ -94,7 +100,7 @@ public class NavigationService {
                 crosswalkAccessibilityService.summarizeForRoute(crosswalks)
         );
     }
-
+    
     @Transactional
     public RouteResponse createRoute(Long userId, RouteRequest req) {
         int searchOption = req.searchOption() != null ? req.searchOption() : RECOMMENDED_OPTION;
@@ -156,4 +162,43 @@ public class NavigationService {
         }
         nav.complete(req.obstacleCnt(), req.completed());
     }
+    // 후보 중 사용자가 고른 대중교통 경로를 Navigation으로 확정 저장
+    // route_type = TRANSIT, 첫 구간인 (WALK_TO_STOP)부터 시작
+    @Transactional
+    public TransitRouteSaveResponse saveTransitRoute(Long userId, TransitRouteSaveRequest req) {
+        TransitItinerary it = req.getItinerary();
+        String legsJson = objectMapper.writeValueAsString(it.legs());
+        String routeJson = objectMapper.writeValueAsString(it);
+
+        Navigation nav = Navigation.builder()
+                .userId(userId)
+                .startLat(req.getStartLat()).startLng(req.getStartLng())
+                .endLat(req.getDestLat()).endLng(req.getDestLng())
+                .routeData(routeJson)
+                .distance(it.totalDistance())
+                .duration(it.totalTime())
+                .build();
+        nav.startTransit(legsJson);
+
+        navigationRepository.save(nav);
+        return new TransitRouteSaveResponse(
+                nav.getId(),
+                nav.getRouteType().name(),
+                nav.getCurrentLegIndex(),
+                nav.getCurrentLegState().name());
+    }
+    // 탑승/하차 확인 등으로 현재 구간 및 단계를 전환 (본인 기록만,TRANSIT 경로만)
+    @Transactional
+    public void updateLegState(Long userId, Long navigationId, LegStateUpdateRequest req) {
+        Navigation nav = navigationRepository.findById(navigationId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 길찾기 기록입니다."));
+        if (!nav.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("본인의 길찾기 기록만 수정할 수 있습니다.");
+        }
+        if (nav.getRouteType() != RouteType.TRANSIT) {
+            throw new IllegalArgumentException("대중교통 경로만 구간 상태를 변경할 수 있습니다.");
+        }
+        nav.advanceLeg(req.currentLegIndex(), req.currentLegState());
+    }
+    
 }
